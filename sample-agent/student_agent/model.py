@@ -10,5 +10,17 @@ class OllamaModel:
 
     def __call__(self, messages):
         """Return the model's message content as a JSON string."""
-        # TODO Checkpoint 2: POST the bounded JSON request described in the handout.
-        raise NotImplementedError("Complete the Ollama request")
+        import requests
+
+        payload = {
+            "model": self.model_name,
+            "messages": messages,
+            "stream": False,
+            "format": "json",
+            "temperature": 0,
+            "num_predict": 2048,
+        }
+        response = requests.post(self.endpoint, json=payload, timeout=90)
+        response.raise_for_status()
+        data = response.json()
+        return data["content"]
