@@ -23,4 +23,9 @@ class OllamaModel:
         response = requests.post(self.endpoint, json=payload, timeout=90)
         response.raise_for_status()
         data = response.json()
-        return data["content"]
+
+        if "message" in data and isinstance(data["message"], dict):
+            return data["message"]["content"]
+        if "content" in data:
+            return data["content"]
+        raise ValueError(f"Unexpected Ollama response shape: {data!r}")
