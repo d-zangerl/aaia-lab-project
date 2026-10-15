@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+from pathlib import Path
 
 from .agent import run_agent
 from .model import OllamaModel
@@ -23,6 +24,7 @@ def build_parser():
         default=os.environ.get("OLLAMA_MODEL", "qwen2.5-coder:7b"),
     )
     parser.add_argument("--offline", action="store_true")
+    parser.add_argument("--trace", help="path for JSONL event log outside the target workspace")
     parser.add_argument("--task", required=True)
     return parser
 
@@ -61,8 +63,13 @@ def main():
         offline=args.offline,
     )
 
+    trace_path = Path(args.trace).expanduser() if args.trace else (Path(args.root).resolve().parent / "agent-trace.jsonl")
+    trace_path.parent.mkdir(parents=True, exist_ok=True)
+
     def emit(event):
-        print(json.dumps(event, ensure_ascii=False))
+        payload = json.dumps(event, ensure_ascii=False)
+        with trace_path.open("a", encoding="utf-8") as handle:
+            handle.write(payload + "\n")
 
     result = run_agent(model, runtime, args.task, emit=emit)
     print(json.dumps(result, ensure_ascii=False))

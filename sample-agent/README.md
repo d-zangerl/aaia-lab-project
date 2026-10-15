@@ -1,31 +1,40 @@
-# Sample agent scaffold
+# Local coding agent for the Week 1 lab
 
-This optional scaffold standardizes the public interface and file layout used
-by the Week 1 checks. Copy it to `my-agent` before working on the lab:
+This folder contains the working student agent used for the local Ollama task loop,
+tool registry, permissions, and bash approval workflow.
 
-```bash
-cp -R sample-agent my-agent
+## Public interface
+
+```python
+from student_agent import Runtime, run_agent
 ```
 
-The scaffold is intentionally incomplete. It supplies names, module boundaries,
-CLI arguments, and fake-model test cases. Students still implement the assessed
-action-observation loop, Ollama request, tools, permission checks, bash approval,
-and prompt-injection defenses.
-
-Suggested order:
-
-1. Complete the loop in `student_agent/agent.py` and make the included tests pass.
-2. Complete the registry and tools in `student_agent/runtime.py`.
-3. Complete the local Ollama request in `student_agent/model.py`.
-4. Connect the components in `student_agent/cli.py`.
-5. Run the supplied public checks from the lab package directory.
+## Example run
 
 ```bash
-cd sample-agent
-python3 -m unittest discover -s tests -v
-cd ..
-python3 checks/check_agent.py --implementation my-agent --module student_agent
+cd my-agent/sample-agent
+PYTHONPATH=. python3 -m student_agent.cli \
+  --root ../../target-service \
+  --mode edit \
+  --model qwen2.5-coder:7b \
+  --offline \
+  --task "Inspect the pricing code and fix the business rule bug."
 ```
 
-The untouched sample is expected to fail because the core methods raise
-`NotImplementedError`.
+## Trace log
+
+Events are emitted to stdout and appended to a JSONL file outside the target
+workspace, by default at `../agent-trace.jsonl` relative to `target-service`.
+You can override that location with `--trace path/to/log.jsonl`.
+
+## Validation
+
+```bash
+cd my-agent/sample-agent
+python3 -m unittest tests/test_loop.py -v
+cd ../..
+python3 checks/check_agent.py --implementation my-agent/sample-agent --module student_agent
+```
+
+The agent keeps the tool contract strict, validates every action, and treats file
+and tool outputs as untrusted observations instead of authority.
