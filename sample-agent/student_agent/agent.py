@@ -5,6 +5,13 @@ import json
 from logging import log
 
 
+def get_result(termination, result):
+    return {
+        "termination": termination,
+        "result": result,
+    }
+
+
 def run_agent(model, runtime, task, max_turns=15, emit=None):
     """Run the model and tools until a defined termination condition.
 
@@ -18,34 +25,59 @@ def run_agent(model, runtime, task, max_turns=15, emit=None):
         "content": "Return exactly one JSON object per response. Accept only one of these forms: {\"tool\":\"<name>\",\"args\":{...}} or {\"final\":\"text\"}. Do not add any extra text, markdown, or explanation",
     }
 
-    history = []
-    messages = []
-    messages.append(system_message)
-    messages.append({
-        "role": "user",
-        "content": task,
-    })
+    messages = [
+        system_message,
+        {"role": "user", "content": task},
+    ]
 
-    for turn in range(max_turns):
-        responseJson = model(messages)        
-        responseObject = json.loads(responseJson)
+    for _ in range(max_turns):
+        try:
+            response_json = model(messages)
+        except TimeoutError:
+            return get_result("model_error", "model timeout")
+        except KeyboardInterrupt:
+            return get_result("cancelled", "cancelled by user")
 
-        if (responseObject.get("final") is not None):
+        try:
+            response_object = json.loads(response_json)
+        except json.JSONDecodeError:
+            error_observation = {
+                "role": "assistant",
+                "content": json.dumps({"error": f"invalid JSON: {response_json}"}),
+            }
+            messages.append(error_observation)
             if emit is not None:
-                emit(responseObject)
-            return responseObject["final"]
+                emit({"result": {"error": "invalid JSON"}})
+            continue
 
-        elif (responseObject.get("tool") is None):
-            log("Invalid response, ignoring and retrying: " + responseJson)
-            continue  # Invalid response, ignore and retry
+        if response_object.get("final") is not None:
+            result = get_result("final", response_object["final"])
+            if emit is not None:
+                emit(result)
+            return result
 
-        tool_name = responseObject["tool"]
-        tool_args = responseObject.get("args", {})
+        if response_object.get("tool") is None:
+            log(40, "Invalid response, ignoring and retrying: " + response_json)
+            messages.append({
+                "role": "assistant",
+                "content": json.dumps({"error": f"invalid response: {response_json}"}),
+            })
+            if emit is not None:
+                emit({"result": {"error": "invalid response"}})
+            continue
 
-        # TODO validate action
+        action = response_object
+        try:
+            tool_result = runtime.execute(action)
+        except Exception as exc:  # pragma: no cover - defensive fallback for runtime failures
+            tool_result = {"status": "error", "output": str(exc)}
 
-        result = runtime.execute(tool_name, tool_args)
         messages.append({
             "role": "assistant",
-            "content": json.dumps(result),
+            "content": json.dumps({"result": tool_result}),
         })
+
+        if emit is not None:
+            emit({"result": tool_result})
+
+    return get_result("turn_limit", "maximum turns exceeded")
