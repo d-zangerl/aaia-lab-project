@@ -22,7 +22,34 @@ def run_agent(model, runtime, task, max_turns=15, emit=None):
 
     system_message = {
         "role": "system",
-        "content": "Return exactly one JSON object per response. Accept only one of these forms: {\"tool\":\"<name>\",\"args\":{...}} or {\"final\":\"text\"}. Do not add any extra text, markdown, or explanation",
+        "content": (
+            "You are a tool-using coding assistant in a local project. "
+            "Your responses must follow the protocol exactly. "
+            "Return exactly one JSON object with no markdown, no commentary, and no extra text. "
+            "Use one of these valid shapes only: "
+            "1) {\"tool\":\"<tool_name>\",\"args\":{...}} or "
+            "2) {\"final\":\"<summary>\"}. "
+            "The tool name must match the allowed registry exactly. "
+            "The arguments object must use the exact argument names required by that tool. "
+            "Exact tool contract: "
+            "- list_files: args must be an empty object {} or omitted entirely; "
+            "- read_file: args must contain exactly the key 'path'; "
+            "- search_files: args must contain exactly the key 'query'; "
+            "- fetch_url: args must contain exactly the key 'url'; "
+            "- write_file: args must contain exactly the keys 'path' and 'content'; "
+            "- edit_file: args must contain exactly the keys 'path', 'old', and 'new'; "
+            "- bash: args must contain exactly the key 'command'. "
+            "Do not invent tool names, argument names, or alternative response formats. "
+            "When a tool call is rejected, malformed, missing required arguments, or fails, treat that outcome as a tool result and adjust your next response. "
+            "Do not repeat the same invalid request after a failure. "
+            "Keep the action-observation loop concise and goal-directed. "
+            "Prefer the smallest valid tool call that checks a fact needed for the task. "
+            "Use read-only tools before editing and validate any change with the project checks that are relevant to the task. "
+            "If the task is a code repair, inspect the relevant sources first, then make only the necessary change, then verify it. "
+            "Never use placeholder names like file, files, path_name, or command_text when the tool requires a specific argument name. "
+            "The model must stay within the current mode's allowed tools. "
+            "The tool contract is authoritative: exact tool names and exact argument names matter more than natural-language phrasing."
+        ),
     }
 
     messages = [
@@ -38,12 +65,16 @@ def run_agent(model, runtime, task, max_turns=15, emit=None):
         except KeyboardInterrupt:
             return get_result("cancelled", "cancelled by user")
 
+        print(f"Model response: {response_json}")
         try:
             response_object = json.loads(response_json)
         except json.JSONDecodeError:
             error_observation = {
-                "role": "assistant",
-                "content": json.dumps({"error": f"invalid JSON: {response_json}"}),
+                "role": "user",
+                "content": json.dumps({
+                    "error": f"invalid JSON: {response_json}",
+                    "instruction": "Respond with exactly one JSON object shaped as {'tool':..., 'args':...} or {'final':...}",
+                }),
             }
             messages.append(error_observation)
             if emit is not None:
@@ -57,10 +88,12 @@ def run_agent(model, runtime, task, max_turns=15, emit=None):
             return result
 
         if response_object.get("tool") is None:
-            log(40, "Invalid response, ignoring and retrying: " + response_json)
             messages.append({
-                "role": "assistant",
-                "content": json.dumps({"error": f"invalid response: {response_json}"}),
+                "role": "user",
+                "content": json.dumps({
+                    "error": f"invalid response: {response_json}",
+                    "instruction": "Return exactly one JSON object with either a 'tool' action or a 'final' summary.",
+                }),
             })
             if emit is not None:
                 emit({"result": {"error": "invalid response"}})
@@ -73,7 +106,7 @@ def run_agent(model, runtime, task, max_turns=15, emit=None):
             tool_result = {"status": "error", "output": str(exc)}
 
         messages.append({
-            "role": "assistant",
+            "role": "user",
             "content": json.dumps({"result": tool_result}),
         })
 

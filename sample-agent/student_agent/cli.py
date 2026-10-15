@@ -60,7 +60,11 @@ def main():
         approve=approve_command,
         offline=args.offline,
     )
-    result = run_agent(model, runtime, args.task)
+
+    def emit(event):
+        print(json.dumps(event, ensure_ascii=False))
+
+    result = run_agent(model, runtime, args.task, emit=emit)
     print(json.dumps(result, ensure_ascii=False))
     return result
 
